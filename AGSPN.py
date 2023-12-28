@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-# from .modulated_deform_conv_func import ModulatedDeformConvFunction
+
 from src.config import args as args_config
 from src.model.modulated_deform_conv_func import ModulatedDeformConvFunction
 import math
@@ -138,15 +138,6 @@ class Affinity(nn.Module):
 
         weight = torch.sigmoid(self.aff_weight(feature))
 
-        if self.conf_prop:
-            aff_list = list(torch.chunk(weight, self.k_g ** 2, dim=1))
-            rec = aff_list[self.k_g ** 2 // 2]
-
-            weight_temp = weight * conf
-            weight_temp_list = list(torch.chunk(weight_temp, self.k_g ** 2, dim=1))
-            weight_temp_list[self.k_g ** 2 // 2] = rec
-            weight = torch.cat(weight_temp_list, dim=1).view(B, self.k_g ** 2, H, W)
-
         weight = weight / (torch.sum(weight, 1).unsqueeze(1).expand_as(weight) + 1e-8)
 
         # Add zero reference offset
@@ -160,9 +151,9 @@ class Affinity(nn.Module):
         return offset, weight
 
 
-class NLSPN(nn.Module):
+class AGSPN(nn.Module):
     def __init__(self, args, ch_g, ch_f, k_g, k_f):
-        super(NLSPN, self).__init__()
+        super(AGSPN, self).__init__()
 
         # Guidance : [B x ch_g x H x W]
         # Feature : [B x ch_f x H x W]
@@ -237,9 +228,6 @@ class NLSPN(nn.Module):
                 rgb=None):
         guidance_list = torch.chunk(guidance, self.prop_time, dim=1)
 
-        # assert self.ch_g == guidance_list[0].shape[1]
-        # assert self.ch_f == feat_init.shape[1]
-
         offset_1, aff_1 = self._get_offset_affinity_3_1_(guidance_list[0], conf)
 
         offset_2, aff_2 = self._get_offset_affinity_3_2_(guidance_list[1], conf)
@@ -282,5 +270,5 @@ if __name__ == '__main__':
 
     attn = torch.randn((1, 16, 48, 48)).to('cuda')
 
-    d = NLSPN(args_config, ch_g=8, ch_f=1, k_g=3, k_f=3).to('cuda')
+    d = AGSPN(args_config, ch_g=8, ch_f=1, k_g=3, k_f=3).to('cuda')
     print(d(a, guide, conf, attn, a)[0].shape)
