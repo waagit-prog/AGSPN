@@ -69,7 +69,7 @@ class Block(nn.Module):
         return out
 
 
-class LSKblock(nn.Module):
+class Atten(nn.Module):
     def __init__(self, dim):
         super().__init__()
         self.conv_0_ = nn.Conv2d(dim, dim, 1, padding=0, groups=dim)
@@ -181,11 +181,8 @@ class AGSPN(nn.Module):
         self.k_g_3 = 3
 
         self.k_f_3 = 3
-        # Assume zero offset for center pixels
-        # self.num_3 = 3 * 3 - 1
-        # self.idx_ref_3 = self.num_3 // 2
 
-        self.atten = LSKblock(16 + 6)
+        self.atten = Atten(16 + 6)
 
         self.proj = conv_bn_relu(3, 6, kernel=1, stride=1)
 
@@ -228,17 +225,17 @@ class AGSPN(nn.Module):
                 rgb=None):
         guidance_list = torch.chunk(guidance, self.prop_time, dim=1)
 
-        offset_1, aff_1 = self._get_offset_affinity_3_1_(guidance_list[0], conf)
+        offset_1, aff_1 = self._get_offset_affinity_3_1_(guidance_list[0])
 
-        offset_2, aff_2 = self._get_offset_affinity_3_2_(guidance_list[1], conf)
+        offset_2, aff_2 = self._get_offset_affinity_3_2_(guidance_list[1])
 
-        offset_3, aff_3 = self._get_offset_affinity_3_3_(guidance_list[2], conf)
+        offset_3, aff_3 = self._get_offset_affinity_3_3_(guidance_list[2])
 
-        offset_4, aff_4 = self._get_offset_affinity_3_4_(guidance_list[3], conf)
+        offset_4, aff_4 = self._get_offset_affinity_3_4_(guidance_list[3])
 
-        offset_5, aff_5 = self._get_offset_affinity_3_5_(guidance_list[4], conf)
+        offset_5, aff_5 = self._get_offset_affinity_3_5_(guidance_list[4])
 
-        offset_6, aff_6 = self._get_offset_affinity_3_6_(guidance_list[5], conf)
+        offset_6, aff_6 = self._get_offset_affinity_3_6_(guidance_list[5])
 
         mask_fix = feat_fix.sign()
         feat_result = feat_init.float().contiguous()
