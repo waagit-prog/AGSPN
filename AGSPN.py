@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+# from .modulated_deform_conv_func import ModulatedDeformConvFunction
 from src.config import args as args_config
 from src.model.modulated_deform_conv_func import ModulatedDeformConvFunction
 import math
@@ -40,36 +40,7 @@ def conv_bn_relu(ch_in, ch_out, kernel, stride=1, padding=0, bn=True,
     return layers
 
 
-class Block(nn.Module):
-    expansion = 1
-
-    def __init__(self, inplanes, planes, stride=1, norm_layer=None):
-        super().__init__()
-        if norm_layer is None:
-            norm_layer = nn.BatchNorm2d
-        self.conv1 = conv3x3(inplanes, planes, stride)
-        self.bn1 = norm_layer(planes)
-        self.relu = nn.ReLU(inplace=True)
-        self.conv2 = conv3x3(planes, planes)
-        self.bn2 = norm_layer(planes)
-        self.stride = stride
-        self.fc1 = conv_bn_relu(inplanes, planes, kernel=3, padding=1, bn=False)
-        self.fc2 = conv_bn_relu(inplanes, planes, kernel=3, padding=1, bn=False)
-
-    def forward(self, x):
-        # x = self.fc1(x)
-        # x = self.fc2(x)
-        identity = x
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = self.relu(out)
-        out = self.conv2(out)
-        out = self.bn2(out)
-        out += identity
-        return out
-
-
-class Atten(nn.Module):
+class CrossAttn(nn.Module):
     def __init__(self, dim):
         super().__init__()
         self.conv_0_ = nn.Conv2d(dim, dim, 1, padding=0, groups=dim)
@@ -131,13 +102,10 @@ class Affinity(nn.Module):
         self.aff_offset.weight.data.zero_()
         self.aff_offset.bias.data.zero_()
 
-    def forward(self, feature, conf):
+    def forward(self, feature):
         B, _, H, W = feature.shape
 
-        # feature = self.conv2(self.conv1(feature))
-
         weight = torch.sigmoid(self.aff_weight(feature))
-
         weight = weight / (torch.sum(weight, 1).unsqueeze(1).expand_as(weight) + 1e-8)
 
         # Add zero reference offset
@@ -152,22 +120,8 @@ class Affinity(nn.Module):
 
 
 class AGSPN(nn.Module):
-    def __init__(self, args, ch_g, ch_f, k_g, k_f):
+    def __init__(self, args, ch_g, ch_f):
         super(AGSPN, self).__init__()
-
-        # Guidance : [B x ch_g x H x W]
-        # Feature : [B x ch_f x H x W]
-
-        # Currently only support ch_f == 1
-        assert ch_f == 1, 'only tested with ch_f == 1 but {}'.format(ch_f)
-
-        assert (k_g % 2) == 1, \
-            'only odd kernel is supported but k_g = {}'.format(k_g)
-
-        pad_g_3 = int((3 - 1) / 2)
-        assert (k_f % 2) == 1, \
-            'only odd kernel is supported but k_f = {}'.format(k_f)
-
         pad_f_3 = int((3 - 1) / 2)
 
         self.args = args
@@ -176,13 +130,12 @@ class AGSPN(nn.Module):
 
         self.ch_g = ch_g
         self.ch_f = ch_f
-        self.k_g = k_g
 
         self.k_g_3 = 3
 
         self.k_f_3 = 3
 
-        self.atten = Atten(16 + 6)
+        self.atten = CrossAttn(16 + 6)
 
         self.proj = conv_bn_relu(3, 6, kernel=1, stride=1)
 
@@ -215,13 +168,12 @@ class AGSPN(nn.Module):
         return feat
 
     def combine(self, feat, attn):
-
         self_feat = self.proj(feat)
         attn = torch.cat([attn, self_feat], dim=1)
         dep = self.atten(feat, attn)
         return dep
 
-    def forward(self, feat_init, guidance, conf=None, attn=None, feat_fix=None,
+    def forward(self, feat_init, guidance, attn=None, feat_fix=None,
                 rgb=None):
         guidance_list = torch.chunk(guidance, self.prop_time, dim=1)
 
@@ -245,10 +197,6 @@ class AGSPN(nn.Module):
         aff_list = [aff_1, aff_2, aff_3, aff_4, aff_5, aff_6]
 
         for k in range(0, self.prop_time):
-            # Input preservation for each iteration
-            if False:
-                feat_result = (1.0 - mask_fix) * feat_result \
-                              + mask_fix * feat_fix
 
             feat_result = self._propagate_once(feat_result, offset_list[k], aff_list[k])
 
@@ -263,9 +211,8 @@ class AGSPN(nn.Module):
 if __name__ == '__main__':
     a = torch.randn((1, 1, 48, 48)).to('cuda')
     guide = torch.ones((1, 6 * 16, 48, 48)).to('cuda')
-    conf = torch.randn((1, 1, 48, 48)).to('cuda')
 
     attn = torch.randn((1, 16, 48, 48)).to('cuda')
 
     d = AGSPN(args_config, ch_g=8, ch_f=1, k_g=3, k_f=3).to('cuda')
-    print(d(a, guide, conf, attn, a)[0].shape)
+    print(d(a, guide, attn, a)[0].shape)
