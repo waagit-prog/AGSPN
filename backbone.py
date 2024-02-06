@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from src.config import args as args_config
-from src.model.AGSPN import AGSPN
+from config import args as args_config
+from model.AGSPN import AGSPN
 from timm.models.layers import DropPath
 import torch
 import torch.nn as nn
